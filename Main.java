@@ -8,8 +8,20 @@ public class Main {
     static int passCount = 0;
     static int failCount = 0;
 
+    // ANSI Color Codes
+    public static final String ANSI_RESET = "\u001B[0m";
+    public static final String ANSI_GREEN = "\u001B[32m";
+    public static final String ANSI_RED = "\u001B[31m";
+    public static final String ANSI_YELLOW = "\u001B[33m";
+    public static final String ANSI_BLUE = "\u001B[34m";
+    public static final String ANSI_CYAN = "\u001B[36m";
+
     public static void main(String[] args) throws IOException {
         String baseFolder = ".";
+        
+        System.out.println(ANSI_CYAN + "\n==========================================" + ANSI_RESET);
+        System.out.println(ANSI_CYAN + "      CPU SCHEDULER VERIFICATION RUN      " + ANSI_RESET);
+        System.out.println(ANSI_CYAN + "==========================================\n" + ANSI_RESET);
 
         // Run AG tests
         runAGTests(new File(baseFolder + "/AG"));
@@ -18,20 +30,25 @@ public class Main {
         runOtherSchedulerTests(new File(baseFolder + "/Other_Schedulers"));
 
         // Print summary
-        System.out.println("\n========== TEST SUMMARY ==========");
-        System.out.println("PASSED: " + passCount);
-        System.out.println("FAILED: " + failCount);
-        System.out.println("TOTAL:  " + (passCount + failCount));
+        System.out.println("\n" + ANSI_CYAN + "==========================================" + ANSI_RESET);
+        System.out.println(ANSI_CYAN + "              FINAL SUMMARY               " + ANSI_RESET);
+        System.out.println(ANSI_CYAN + "==========================================" + ANSI_RESET);
+        System.out.println(ANSI_GREEN + "  PASSED: " + passCount + ANSI_RESET);
+        System.out.println(ANSI_RED   + "  FAILED: " + failCount + ANSI_RESET);
+        System.out.println("  TOTAL:  " + (passCount + failCount));
+        System.out.println(ANSI_CYAN + "==========================================" + ANSI_RESET);
     }
 
     private static void runAGTests(File folder) throws IOException {
-        System.out.println("\n========== AG SCHEDULING TESTS ==========\n");
+        System.out.println(ANSI_BLUE + ">>> RUNNING AG SCHEDULING TESTS..." + ANSI_RESET);
         
-        for (File file : folder.listFiles()) {
+        File[] files = folder.listFiles();
+        if (files == null) return;
+        Arrays.sort(files);
+
+        for (File file : files) {
             if (!file.getName().endsWith(".json")) continue;
             
-            System.out.println("===== Test: " + file.getName() + " =====");
-
             JSONObject root = new JSONObject(new String(Files.readAllBytes(file.toPath())));
             JSONArray processesJson = root.getJSONObject("input").getJSONArray("processes");
             JSONObject expected = root.getJSONObject("expectedOutput");
@@ -49,24 +66,21 @@ public class Main {
             }
 
             SchedulerResult result = CPUScheduler.agScheduling(processes);
-            
-            System.out.println("--- AG Scheduling ---");
-            printResultWithQuantum(result);
-            
-            // Validate against expected
-            validateAGResult(result, expected);
-            System.out.println();
+            validateAGResult(file.getName(), result, expected);
         }
+        System.out.println();
     }
 
     private static void runOtherSchedulerTests(File folder) throws IOException {
-        System.out.println("\n========== OTHER SCHEDULER TESTS ==========\n");
+        System.out.println(ANSI_BLUE + ">>> RUNNING GENERAL SCHEDULER TESTS..." + ANSI_RESET);
         
-        for (File file : folder.listFiles()) {
+        File[] files = folder.listFiles();
+        if (files == null) return;
+        Arrays.sort(files);
+
+        for (File file : files) {
             if (!file.getName().endsWith(".json")) continue;
             
-            System.out.println("===== Test: " + file.getName() + " =====");
-
             JSONObject root = new JSONObject(new String(Files.readAllBytes(file.toPath())));
             JSONObject input = root.getJSONObject("input");
             JSONArray processesJson = input.getJSONArray("processes");
@@ -87,87 +101,68 @@ public class Main {
                         4 // Default quantum for non-AG tests
                 ));
             }
+            
+            String testName = file.getName();
 
             // SJF Test
-            System.out.println("--- Preemptive SJF Scheduling ---");
             SchedulerResult sjfResult = CPUScheduler.preemptiveSJF(processes, contextSwitch);
-            printResult(sjfResult);
-            validateResult("SJF", sjfResult, expected.getJSONObject("SJF"));
+            validateResult(testName + " [SJF]", sjfResult, expected.getJSONObject("SJF"));
 
             // Round Robin Test
-            System.out.println("--- Round Robin Scheduling ---");
             SchedulerResult rrResult = CPUScheduler.roundRobin(processes, rrQuantum, contextSwitch);
-            printResult(rrResult);
-            validateResult("RR", rrResult, expected.getJSONObject("RR"));
+            validateResult(testName + " [RR]", rrResult, expected.getJSONObject("RR"));
 
             // Priority Test
-            System.out.println("--- Priority Preemptive Scheduling ---");
             SchedulerResult priorityResult = CPUScheduler.priorityPreemptive(processes, contextSwitch, agingInterval);
-            printResult(priorityResult);
-            validateResult("Priority", priorityResult, expected.getJSONObject("Priority"));
-
-            System.out.println();
+            validateResult(testName + " [Priority]", priorityResult, expected.getJSONObject("Priority"));
         }
+        System.out.println();
     }
 
-    private static void validateResult(String name, SchedulerResult result, JSONObject expected) {
+    private static void validateResult(String testName, SchedulerResult result, JSONObject expected) {
         boolean passed = true;
         StringBuilder errors = new StringBuilder();
 
         // Check execution order
         JSONArray expectedOrder = expected.getJSONArray("executionOrder");
         List<String> expectedList = new ArrayList<>();
-        for (int i = 0; i < expectedOrder.length(); i++) {
-            expectedList.add(expectedOrder.getString(i));
-        }
+        for (int i = 0; i < expectedOrder.length(); i++) expectedList.add(expectedOrder.getString(i));
         
         if (!result.executionOrder.equals(expectedList)) {
             passed = false;
-            errors.append("  Execution Order mismatch!\n");
-            errors.append("    Expected: " + expectedList + "\n");
-            errors.append("    Actual:   " + result.executionOrder + "\n");
+            errors.append("    Execution Order mismatch!\n");
+            errors.append("      Expected: " + expectedList + "\n");
+            errors.append("      Actual:   " + result.executionOrder + "\n");
         }
 
-        // Check average waiting time
         double expectedAvgWait = expected.getDouble("averageWaitingTime");
         if (Math.abs(result.averageWaitingTime - expectedAvgWait) > 0.01) {
             passed = false;
-            errors.append("  Avg Waiting Time mismatch! Expected: " + expectedAvgWait + ", Got: " + result.averageWaitingTime + "\n");
+            errors.append("    Avg Wait Time mismatch! Expected: " + expectedAvgWait + ", Got: " + result.averageWaitingTime + "\n");
         }
 
-        // Check average turnaround time
         double expectedAvgTurn = expected.getDouble("averageTurnaroundTime");
         if (Math.abs(result.averageTurnaroundTime - expectedAvgTurn) > 0.01) {
             passed = false;
-            errors.append("  Avg Turnaround Time mismatch! Expected: " + expectedAvgTurn + ", Got: " + result.averageTurnaroundTime + "\n");
+            errors.append("    Avg Turnaround mismatch! Expected: " + expectedAvgTurn + ", Got: " + result.averageTurnaroundTime + "\n");
         }
 
-        if (passed) {
-            System.out.println("[PASS] " + name);
-            passCount++;
-        } else {
-            System.out.println("[FAIL] " + name);
-            System.out.print(errors.toString());
-            failCount++;
-        }
+        printStatus(testName, passed, errors.toString());
     }
 
-    private static void validateAGResult(SchedulerResult result, JSONObject expected) {
+    private static void validateAGResult(String fileName, SchedulerResult result, JSONObject expected) {
         boolean passed = true;
         StringBuilder errors = new StringBuilder();
 
-        // Check execution order
         JSONArray expectedOrder = expected.getJSONArray("executionOrder");
         List<String> expectedList = new ArrayList<>();
-        for (int i = 0; i < expectedOrder.length(); i++) {
-            expectedList.add(expectedOrder.getString(i));
-        }
+        for (int i = 0; i < expectedOrder.length(); i++) expectedList.add(expectedOrder.getString(i));
         
         if (!result.executionOrder.equals(expectedList)) {
             passed = false;
-            errors.append("  Execution Order mismatch!\n");
-            errors.append("    Expected: " + expectedList + "\n");
-            errors.append("    Actual:   " + result.executionOrder + "\n");
+            errors.append("    Execution Order mismatch!\n");
+            errors.append("      Expected: " + expectedList + "\n");
+            errors.append("      Actual:   " + result.executionOrder + "\n");
         }
 
         // Check quantum histories
@@ -176,57 +171,44 @@ public class Main {
             JSONObject pr = processResults.getJSONObject(i);
             String pName = pr.getString("name");
             JSONArray expectedQH = pr.getJSONArray("quantumHistory");
-            
             List<Integer> expectedQHList = new ArrayList<>();
-            for (int j = 0; j < expectedQH.length(); j++) {
-                expectedQHList.add(expectedQH.getInt(j));
-            }
+            for (int j = 0; j < expectedQH.length(); j++) expectedQHList.add(expectedQH.getInt(j));
             
             List<Integer> actualQH = result.quantumHistory.get(pName);
+            // Null check
+            if (actualQH == null) actualQH = new ArrayList<>();
+
             if (!expectedQHList.equals(actualQH)) {
                 passed = false;
-                errors.append("  " + pName + " Quantum History mismatch!\n");
-                errors.append("    Expected: " + expectedQHList + "\n");
-                errors.append("    Actual:   " + actualQH + "\n");
+                errors.append("    " + pName + " Quantum History mismatch!\n");
+                errors.append("      Expected: " + expectedQHList + "\n");
+                errors.append("      Actual:   " + actualQH + "\n");
             }
         }
 
-        // Check average waiting time
         double expectedAvgWait = expected.getDouble("averageWaitingTime");
         if (Math.abs(result.averageWaitingTime - expectedAvgWait) > 0.01) {
             passed = false;
-            errors.append("  Avg Waiting Time mismatch! Expected: " + expectedAvgWait + ", Got: " + result.averageWaitingTime + "\n");
+            errors.append("    Avg Wait Time mismatch! Expected: " + expectedAvgWait + ", Got: " + result.averageWaitingTime + "\n");
         }
 
-        // Check average turnaround time
         double expectedAvgTurn = expected.getDouble("averageTurnaroundTime");
         if (Math.abs(result.averageTurnaroundTime - expectedAvgTurn) > 0.01) {
             passed = false;
-            errors.append("  Avg Turnaround Time mismatch! Expected: " + expectedAvgTurn + ", Got: " + result.averageTurnaroundTime + "\n");
+            errors.append("    Avg Turnaround mismatch! Expected: " + expectedAvgTurn + ", Got: " + result.averageTurnaroundTime + "\n");
         }
 
+        printStatus(fileName + " [AG]", passed, errors.toString());
+    }
+
+    private static void printStatus(String testName, boolean passed, String errors) {
         if (passed) {
-            System.out.println("[PASS] AG Scheduling");
+            System.out.println(ANSI_GREEN + "  [PASS] " + ANSI_RESET + testName);
             passCount++;
         } else {
-            System.out.println("[FAIL] AG Scheduling");
-            System.out.print(errors.toString());
+            System.out.println(ANSI_RED + "  [FAIL] " + ANSI_RESET + testName);
+            System.out.println(ANSI_YELLOW + errors + ANSI_RESET);
             failCount++;
         }
-    }
-
-    private static void printResult(SchedulerResult r) {
-        System.out.println("Execution Order: " + r.executionOrder);
-        System.out.println("Waiting Times: " + r.waitingTimes);
-        System.out.println("Turnaround Times: " + r.turnaroundTimes);
-        System.out.println("Average Waiting Time: " + r.averageWaitingTime);
-        System.out.println("Average Turnaround Time: " + r.averageTurnaroundTime);
-        System.out.println("-----------------------------");
-    }
-
-    private static void printResultWithQuantum(SchedulerResult r) {
-        printResult(r);
-        System.out.println("Quantum History: " + r.quantumHistory);
-        System.out.println("-----------------------------");
     }
 }

@@ -118,26 +118,23 @@ public class CPUScheduler {
         for (Process p : processes) waitTime.put(p, 0);
 
         while (completed < processes.size()) {
-            // 1. Apply aging based on ACCUMULATED wait time
+            // Apply aging - decrease priority for waiting processes
             for (Process p : processes) {
-                if (p.arrivalTime <= time && p.remainingTime > 0) {
-                    // Check if aging interval reached
+                if (p.arrivalTime <= time && p.remainingTime > 0 && p != last) {
+                    waitTime.put(p, waitTime.get(p) + 1);
                     if (waitTime.get(p) >= agingInterval) {
                         p.priority--;
-                        waitTime.put(p, 0); // Reset wait time after aging
+                        waitTime.put(p, 0);
                     }
                 }
             }
 
-            // 2. Select Process
             Process cur = null;
             int bestPriority = Integer.MAX_VALUE;
             int earliestArrival = Integer.MAX_VALUE;
-            
             for (Process p : processes) {
                 if (p.arrivalTime <= time && p.remainingTime > 0) {
-                    // Lower Number = Higher Priority
-                    // Tie-breaker: Arrival Time (FCFS)
+                    // Use arrival time as tie-breaker (FCFS)
                     if (p.priority < bestPriority || 
                         (p.priority == bestPriority && p.arrivalTime < earliestArrival)) {
                         bestPriority = p.priority;
@@ -147,19 +144,12 @@ public class CPUScheduler {
                 }
             }
 
-            // 3. Handle Idle CPU
             if (cur == null) {
                 time++;
-                // Increment wait time for all waiting processes
-                for (Process p : processes) {
-                    if (p.arrivalTime <= time && p.remainingTime > 0) {
-                         waitTime.put(p, waitTime.get(p) + 1);
-                    }
-                }
                 continue;
             }
 
-            // 4. Handle Context Switch
+            // Handle Context Switch
             boolean switched = (last != null && last != cur);
             if (switched) {
                 // Add context switch duration to time and wait times
@@ -185,19 +175,12 @@ public class CPUScheduler {
                 // First process
                 result.executionOrder.add(cur.name);
             }
+
+            // Reset wait time for running process
+            waitTime.put(cur, 0);
             
-            // 5. Execute 1 Unit
             cur.remainingTime--;
             time++;
-            
-            // Increment wait time for OTHERS
-            for (Process p : processes) {
-                if (p != cur && p.arrivalTime <= time && p.remainingTime > 0) {
-                    waitTime.put(p, waitTime.get(p) + 1);
-                }
-            }
-            // Reset running process wait time (it's running, not waiting)
-            waitTime.put(cur, 0);
 
             if (cur.remainingTime == 0) {
                 cur.completionTime = time;
@@ -379,4 +362,5 @@ public class CPUScheduler {
         r.averageWaitingTime = w / processes.size();
         r.averageTurnaroundTime = t / processes.size();
     }
+
 }
